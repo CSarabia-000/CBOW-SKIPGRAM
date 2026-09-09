@@ -1,9 +1,13 @@
-# cbow-sbwc — Modelo CBOW sobre el Spanish Billion Word Corpus
+# word2vec-sbwc — CBOW y skip-gram sobre el Spanish Billion Word Corpus
 
-Entrenamiento de embeddings de palabras con **CBOW + negative sampling** (PyTorch)
-sobre el corpus limpio SBWC (`sbwce.clean.txt.bz2`, 2,97 GB comprimido, una
-oración por línea), desde la lectura del `.bz2` hasta la exportación en formato
-Word2Vec compatible con gensim.
+Entrenamiento de embeddings de palabras con **word2vec + negative sampling**
+(PyTorch) sobre el corpus limpio SBWC (`sbwce.clean.txt.bz2`, 2,97 GB comprimido,
+una oración por línea), desde la lectura del `.bz2` hasta la exportación en
+formato Word2Vec compatible con gensim.
+
+Las **dos arquitecturas** comparten el pipeline completo y se eligen con una
+llave del YAML: `arch: "cbow"` (por defecto) o `arch: "skipgram"`. El proyecto
+nació como CBOW; la Fase 8 agregó skip-gram sin duplicar nada.
 
 Configuración de partida: **vocab=5.000 / dim=50 / contexto=2**. Todo el pipeline
 funciona **por streaming** (nunca se descomprime el corpus a disco ni se
@@ -21,10 +25,11 @@ nuevo en `configs/`.
 | 1. Lectura del corpus | `src/corpus.py` | `01_exploracion_corpus.ipynb` | ✅ implementada |
 | 2. Vocabulario | `src/vocabulary.py` | `02_vocabulario.ipynb` | ✅ implementada |
 | 3. Pares contexto-target | `src/dataset.py` | `03_generacion_pares.ipynb` | ✅ implementada |
-| 4. Modelo CBOW | `src/model.py` | `04_entrenamiento.ipynb` | ✅ implementada |
+| 4. Modelo (CBOW y skip-gram) | `src/model.py` | `04_entrenamiento.ipynb` | ✅ implementada |
 | 5. Entrenamiento | `src/train.py` | `04_entrenamiento.ipynb` | ✅ implementada |
 | 6. Evaluación y exportación | `src/evaluate.py`, `src/export.py` | `05_evaluacion_embeddings.ipynb` | ✅ implementada |
 | 7. Comparación de configuraciones | `src/compare.py` | `06_comparacion_configuraciones.ipynb` | ✅ implementada |
+| 8. Skip-gram | `src/dataset.py`, `src/model.py` | *(pendiente: 07)* | ⚙️ implementada, sin entrenar |
 
 **Artefactos ya producidos**:
 
@@ -42,6 +47,11 @@ nuevo en `configs/`.
 > primeras seis fases con un ejemplo y un gráfico por fase. Los notebooks 01-05
 > tienen el detalle de cada una, y el 06 es la comparativa de la Fase 7.
 
+> **Estado de la Fase 8 (skip-gram):** el código está listo y probado de punta a
+> punta, pero **todavía no hay ninguna corrida skip-gram entrenada**. La
+> configuración `configs/piloto_sg_5k_50_2.yaml` es el gemelo exacto del piloto
+> CBOW (cambia `arch` y nada más) y está lista para lanzarse. Ver *Fase 8*.
+
 ---
 
 ## Estructura
@@ -54,7 +64,8 @@ proyecto_cbow/
 │   ├── piloto_5k_100_2.yaml       # grilla fase 7: dim 100
 │   ├── piloto_5k_50_5.yaml        # grilla fase 7: contexto 5
 │   ├── piloto_5k_100_5.yaml       # grilla fase 7: dim 100 + contexto 5
-│   └── ablacion_unk_5k_50_2.yaml  # ablación: entrenar CON <UNK>
+│   ├── ablacion_unk_5k_50_2.yaml  # ablación: entrenar CON <UNK>
+│   └── piloto_sg_5k_50_2.yaml     # fase 8: skip-gram, gemelo de piloto_5k_50_2
 ├── data/
 │   ├── raw/sbwce.clean.txt.bz2    # el corpus (no se versiona)
 │   └── processed/
@@ -65,8 +76,8 @@ proyecto_cbow/
 │   ├── config.py                  # carga de YAML + rutas derivadas de cada corrida
 │   ├── corpus.py                  # Fase 1: streaming del .bz2 + tokenización
 │   ├── vocabulary.py              # Fase 2: frecuencias, poda, <UNK>, subsampling
-│   ├── dataset.py                 # Fase 3: pares (contexto, target), Dataset e IterableDataset
-│   ├── model.py                   # Fase 4: CBOWModel + NegativeSampler
+│   ├── dataset.py                 # Fase 3: pares CBOW y skip-gram, Dataset e IterableDataset
+│   ├── model.py                   # Fase 4: Word2VecModel -> CBOWModel / SkipGramModel
 │   ├── train.py                   # Fase 5: loop, validación, checkpoints, history
 │   ├── evaluate.py                # Fase 6: vecinos, analogías, precisión
 │   ├── export.py                  # Fase 6: exportación a formato Word2Vec
@@ -393,6 +404,68 @@ Y hay un argumento que **queda retirado**: en la Fase 6 escribí que dejar `<UNK
 haría que el modelo "gastara capacidad prediciendo un token comodín". A 0,97% del
 stream esa capacidad es despreciable, y la medición lo confirma. No era el motivo.
 
+## Fase 8 — Skip-gram
+
+Skip-gram vive en este mismo proyecto, no en una carpeta aparte: comparte corpus,
+vocabulario, entrenamiento, evaluación, exportación y comparación con CBOW.
+
+```bash
+python -m src.train --config configs/piloto_sg_5k_50_2.yaml
+```
+
+### La diferencia está en los pares, no en el modelo
+
+Sobre la **misma ventana** (`context_size=2`), las dos arquitecturas la leen en
+direcciones opuestas:
+
+```
+oración:   ... sudán palestinos regresar hogares la ...
+
+CBOW        [sudán palestinos hogares la]  ->  regresar     (1 par por token)
+skip-gram   regresar  ->  [sudán]
+            regresar  ->  [palestinos]                       (1 par por vecino)
+            regresar  ->  [hogares]
+            regresar  ->  [la]
+```
+
+Medido sobre 300 oraciones: **737 pares en CBOW, 2.042 en skip-gram** (2,8x). Por
+eso una época de skip-gram cuesta varias veces más sobre el mismo texto. A cambio,
+cada par pone a la palabra central sola del lado de la entrada, en vez de diluida
+en el promedio de su contexto — que es la razón por la que skip-gram suele rendir
+mejor con palabras poco frecuentes.
+
+`generate_skipgram_pairs` se apoya en `generate_pairs` y expande cada par, en vez
+de recorrer el corpus por su cuenta: el muestreo de líneas, el subsampling,
+`drop_unknown`, el corte de validación y el reparto entre workers son el mismo
+código en las dos arquitecturas. En `model.py`, `Word2VecModel` tiene las dos
+matrices, el negative sampling y la loss; lo único que redefinen `CBOWModel` y
+`SkipGramModel` es el `forward` (promedio enmascarado vs. embedding del centro).
+
+### Cómo comparar CBOW con skip-gram (y cómo no)
+
+**La loss no se compara entre arquitecturas.** No son versiones más fácil o más
+difícil de la misma tarea: son tareas distintas, sobre conjuntos de pares de
+tamaños distintos. `comparable_loss` incluye `arch` para que las dos familias no
+se crucen por accidente, y `cross_validation_loss` falla si se le pasan
+configuraciones de distinta arquitectura.
+
+**La comparación válida es la precisión en analogías**, y mejor todavía `mcnemar`
+sobre los mismos ítems, que es mucho más sensible que comparar dos porcentajes con
+sus intervalos:
+
+```python
+from src.compare import collect, mcnemar
+
+filas = collect(["piloto_5k_50_2", "piloto_sg_5k_50_2"], detail=True)
+print(mcnemar(filas[0]["items"], filas[1]["items"]))
+```
+
+Para que esa comparación signifique algo, las dos corridas comparten
+`vocab_from: base_5k_50_2` — el mismo vocabulario, o sea el mismo espacio de
+índices— y son idénticas en todo lo demás.
+
+---
+
 ## Configuración
 
 Cada corrida se define por completo en un YAML. Los hiperparámetros no se
@@ -637,8 +710,14 @@ ruido.
 
 ## Lo que falta
 
-Con la grilla montada, cada pregunta nueva es un YAML. Las cuatro que dejó
-abiertas la Fase 7, en orden de interés:
+Con la grilla montada, cada pregunta nueva es un YAML.
+
+**Lo primero: entrenar skip-gram.** El código de la Fase 8 está probado pero no
+hay ninguna corrida. `piloto_sg_5k_50_2` es el gemelo exacto del piloto CBOW y
+responde la pregunta más grande que queda abierta: si la arquitectura importa
+más o menos que la dimensión, que fue el factor dominante en la Fase 7.
+
+Después, las cuatro que dejó abiertas la Fase 7, en orden de interés:
 
 1. **`dim 200`, contexto 2.** La dimensión fue el factor dominante y no sabemos
    dónde deja de rendir. El salto 50→100 dio +12,9 pp; el de 100→200 dirá si la

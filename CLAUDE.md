@@ -1,8 +1,8 @@
-# Proyecto: Modelo CBOW sobre Spanish Billion Word Corpus (SBWC)
+# Proyecto: word2vec (CBOW y skip-gram) sobre Spanish Billion Word Corpus (SBWC)
 
 ## Objetivo
 
-Construir un modelo CBOW (Continuous Bag of Words) entrenado sobre el corpus limpio SBWC, comenzando con la configuración base **vocab=5,000 / dim=50 / contexto=2**, con arquitectura pensada para escalar fácilmente a otras combinaciones de la grilla:
+Construir modelos word2vec entrenados sobre el corpus limpio SBWC. El proyecto arrancó con CBOW (Continuous Bag of Words) y **la Fase 8 agregó skip-gram** dentro del mismo pipeline; la arquitectura se elige con la llave `arch` de cada YAML. Se comenzó con la configuración base **vocab=5,000 / dim=50 / contexto=2**, con arquitectura pensada para escalar fácilmente a otras combinaciones de la grilla:
 
 - Vocabulario: 5k, 10k, 15k, 20k
 - Dimensión de embeddings: 50, 100, 200, 300
@@ -27,7 +27,7 @@ cbow-sbwc/
 │   ├── corpus.py             # lectura streaming del .bz2, tokenización
 │   ├── vocabulary.py         # construcción de vocabulario + subsampling
 │   ├── dataset.py            # generación de pares (contexto, target) + Dataset/DataLoader
-│   ├── model.py               # arquitectura CBOW (PyTorch)
+│   ├── model.py               # arquitecturas CBOW y skip-gram (PyTorch)
 │   ├── train.py               # loop de entrenamiento, checkpoints
 │   ├── evaluate.py            # vecinos cercanos, analogías, similitud coseno
 │   └── export.py              # exportar embeddings a formato Word2Vec (.txt/.bin)
@@ -156,3 +156,70 @@ Cada corrida es solo un nuevo archivo YAML en `configs/`, sin tocar el código d
 ## 6. Prompt sugerido para pasar a Claude Code
 
 > Quiero que construyas el proyecto `cbow-sbwc` siguiendo esta especificación exacta (estructura de carpetas, módulos en `src/`, notebooks en `notebooks/`, sistema de configuración YAML). El corpus de entrada es `sbwce.clean.txt.bz2` (una oración por línea, sin duplicados), ubicado en `data/raw/`. Empieza implementando la Fase 1 (`src/corpus.py`) junto con `notebooks/01_exploracion_corpus.ipynb` para probarla, y avanza fase por fase, validando cada una con su notebook correspondiente antes de pasar a la siguiente. Usa PyTorch para el modelo, negative sampling en la capa de salida, y asegúrate de que todo el pipeline funcione por streaming (sin descomprimir el corpus completo a disco ni cargar todos los pares en memoria).
+---
+
+## 7. Fase 8 — Skip-gram dentro del mismo proyecto
+
+Skip-gram **no** es un proyecto aparte: vive en este repo, comparte corpus,
+vocabulario, entrenamiento, evaluación y exportación con CBOW, y se elige con
+una llave del YAML.
+
+```yaml
+# configs/piloto_sg_5k_50_2.yaml
+arch: "skipgram"             # "cbow" (por defecto) o "skipgram"
+vocab_from: "base_5k_50_2"   # el MISMO vocabulario que el piloto CBOW
+```
+
+### Por qué en el mismo proyecto y no en una carpeta nueva
+
+Copiar el proyecto habría duplicado 7 de los 9 módulos de `src/` (corpus,
+vocabulario, config, train, evaluate, export, compare son idénticos para las dos
+arquitecturas), y con ellos sus futuros bugs. Pero la razón de fondo es la
+comparación: para que CBOW y skip-gram sean comparables tienen que entrenar
+sobre **el mismo vocabulario**, es decir el mismo espacio de índices. Eso ya lo
+resolvía `vocab_from`, que solo funciona dentro de un mismo proyecto. Con dos
+carpetas habría que copiar `vocab.json` a mano en cada refresco y confiar en que
+nadie se olvide.
+
+### Dónde está la diferencia entre las dos arquitecturas
+
+En **los pares**, no en el modelo. Sobre la misma ventana:
+
+* CBOW: un par por token — `([a, b, d, e], c)`.
+* Skip-gram: un par por vecino — `([c], a)`, `([c], b)`, `([c], d)`, `([c], e)`.
+
+`generate_skipgram_pairs` se apoya en `generate_pairs` y expande cada par, en vez
+de recorrer el corpus por su cuenta: así el muestreo de líneas, el subsampling,
+`drop_unknown`, el corte de validación y el reparto entre workers son
+literalmente el mismo código, y las dos arquitecturas no pueden terminar
+entrenando sobre ventanas distintas sin que nadie se dé cuenta.
+
+En `model.py` la diferencia cabe en un `forward`: `Word2VecModel` tiene las dos
+matrices, el negative sampling y la loss; `CBOWModel` promedia el contexto con
+`masked_mean` y `SkipGramModel` devuelve el embedding del centro. El contrato del
+batch es `(entrada, máscara, target)` en las dos, con la entrada de ancho
+`2 * context_size` en CBOW y 1 en skip-gram, así que `train.py` no ramifica nunca.
+
+### Tres cosas que hay que tener presentes
+
+1. **La ventana es fija**, no sorteada por token como en el word2vec original.
+   CBOW ya se había entrenado así; mantenerlo igual en las dos es lo que hace que
+   la comparación aísle la arquitectura.
+2. **Una época de skip-gram cuesta ~3.5x más** con `context_size=2` (medido: 300
+   oraciones dan 737 pares en CBOW y 2.042 en skip-gram). Es costo esperado, no
+   un problema de configuración.
+3. **La loss NO se compara entre arquitecturas.** No son versiones más fácil o
+   más difícil de la misma tarea, son tareas distintas sobre conjuntos de pares
+   de tamaños distintos. `comparable_loss` en `compare.py` ya incluye `arch` para
+   que las dos familias no se crucen por accidente, y `cross_validation_loss`
+   falla si se le pasan configuraciones de distinta arquitectura. **La
+   comparación válida es la precisión en analogías**, y mejor todavía `mcnemar`
+   sobre los mismos ítems.
+
+### Configuraciones
+
+`piloto_sg_5k_50_2` es el gemelo exacto de `piloto_5k_50_2`: cambia `arch` y
+nada más. Cualquier configuración anterior a esta fase no declara `arch` y
+`load_config` le pone `"cbow"`, así que las corridas ya entrenadas siguen
+funcionando sin tocar sus YAML.
+

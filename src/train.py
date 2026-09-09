@@ -3,6 +3,12 @@
 Arma el pipeline completo a partir de un YAML: vocabulario → dataset →
 DataLoader → modelo → optimizador → épocas.
 
+Sirve igual para CBOW y para skip-gram: el dataset y el modelo salen de sus
+respectivas fábricas, que leen `arch` de la configuración, y el batch tiene la
+misma forma `(entrada, máscara, target)` en los dos casos. Este módulo no
+menciona ninguna arquitectura en particular a propósito; agregar una tercera no
+debería obligarlo a cambiar.
+
 Se puede ejecutar desde un notebook (`train("configs/base.yaml")`) o desde la
 línea de comandos (`python -m src.train --config configs/base.yaml`).
 
@@ -33,8 +39,9 @@ from src.config import (
     load_config,
     vocab_path,
 )
-from src.dataset import CBOWIterableDataset
-from src.model import CBOWModel, NegativeSampler, build_model_from_config
+from src.config import arch as config_arch
+from src.dataset import build_dataset_from_config
+from src.model import NegativeSampler, Word2VecModel, build_model_from_config
 from src.vocabulary import Vocabulary
 
 __all__ = [
@@ -92,7 +99,7 @@ def _learning_rate(base: float, epoch: int, epochs: int, floor: float = 0.05) ->
 
 @torch.no_grad()
 def evaluate_loss(
-    model: CBOWModel,
+    model: Word2VecModel,
     vocab: Vocabulary,
     loader: DataLoader,
     device: torch.device,
@@ -129,7 +136,7 @@ def evaluate_loss(
 
 def save_checkpoint(
     path: Path,
-    model: CBOWModel,
+    model: Word2VecModel,
     optimizer: torch.optim.Optimizer,
     epoch: int,
     history: list[EpochRecord],
@@ -151,6 +158,7 @@ def save_checkpoint(
             "config": config,
             "vocab_size": model.vocab_size,
             "embedding_dim": model.embedding_dim,
+            "arch": model.ARCH,
         },
         path,
     )
@@ -159,7 +167,7 @@ def save_checkpoint(
 
 def load_checkpoint(
     path: str | Path,
-    model: CBOWModel | None = None,
+    model: Word2VecModel | None = None,
     optimizer: torch.optim.Optimizer | None = None,
     *,
     map_location: str | torch.device = "cpu",
@@ -219,7 +227,7 @@ def train(
     # Las primeras `validation_sentences` oraciones se reservan para validar y
     # se saltean al entrenar, así ningún par aparece en los dos conjuntos.
     n_validation = int(config.get("validation_sentences", 0))
-    train_dataset = CBOWIterableDataset.from_config(
+    train_dataset = build_dataset_from_config(
         config, vocab, skip_sentences=n_validation
     )
     train_loader = DataLoader(
@@ -232,7 +240,7 @@ def train(
 
     validation_loader = None
     if n_validation > 0:
-        validation_dataset = CBOWIterableDataset.from_config(
+        validation_dataset = build_dataset_from_config(
             config, vocab, limit=n_validation
         )
         validation_loader = DataLoader(
@@ -261,7 +269,7 @@ def train(
     seed = config.get("seed", 42)
     best = min((r.val_loss or r.train_loss for r in history), default=float("inf"))
 
-    print(f"config     : {config['name']}")
+    print(f"config     : {config['name']} | arch: {config_arch(config)}")
     print(f"dispositivo: {device_obj} | workers: {num_workers}")
     print(f"modelo     : {model}")
     print(f"validación : {n_validation:,} oraciones reservadas")
@@ -378,7 +386,9 @@ def _write_history(config: dict, history: list[EpochRecord], best: float) -> Non
 
 def _main() -> None:
     configure_console()
-    parser = argparse.ArgumentParser(description="Entrena un modelo CBOW.")
+    parser = argparse.ArgumentParser(
+        description="Entrena la configuración indicada (CBOW o skip-gram)."
+    )
     parser.add_argument("--config", default="configs/base.yaml")
     parser.add_argument("--device", default=None, help="cuda, cpu o auto")
     parser.add_argument("--num-workers", type=int, default=0)

@@ -1,25 +1,35 @@
-"""Fase 4 — Arquitectura CBOW en PyTorch con negative sampling.
+"""Fase 4 — Arquitecturas CBOW y skip-gram en PyTorch con negative sampling.
 
-El modelo tiene **dos** matrices de embeddings, no una:
+Las dos arquitecturas comparten casi todo. Ambas tienen **dos** matrices de
+embeddings, no una:
 
-* `input_embeddings` — la representación de una palabra cuando aparece *como
-  contexto*. Es la que se exporta al final: son "los embeddings".
+* `input_embeddings` — la representación de una palabra cuando aparece *del lado
+  de la entrada*. Es la que se exporta al final: son "los embeddings".
 * `output_embeddings` — la representación de una palabra cuando aparece *como
-  target*. Solo se usa para puntuar durante el entrenamiento y después se
-  descarta.
+  lo que hay que predecir*. Solo se usa para puntuar durante el entrenamiento y
+  después se descarta.
 
-El camino de un batch es:
+Lo único que las distingue es cómo se arma la proyección `h` a partir de la
+entrada, y por eso es lo único que las subclases redefinen (`forward`):
 
-    contexto (B, 2C)  --input_embeddings-->  (B, 2C, D)
-                      --promedio enmascarado-->  proyección (B, D)
-    proyección · output_embeddings[target]     -> puntaje positivo (B,)
-    proyección · output_embeddings[negativos]  -> puntajes negativos (B, K)
+    CBOW       contexto (B, 2C) --input--> (B, 2C, D) --promedio enmascarado--> h
+    skip-gram  centro   (B, 1)  --input--> (B, 1, D)  --se toma el único vector--> h
+
+De ahí en adelante el camino es idéntico:
+
+    h · output_embeddings[target]     -> puntaje positivo (B,)
+    h · output_embeddings[negativos]  -> puntajes negativos (B, K)
 
 La capa de salida usa **negative sampling** en vez de softmax completo: en vez
 de calcular un puntaje contra las 5.000 palabras del vocabulario en cada paso,
 se calcula contra la palabra correcta y `K` palabras sorteadas al azar. Con
 vocabulario 5.000 y K=10 eso es 11 productos en vez de 5.000; al escalar a
 vocabulario 20.000 la diferencia es de casi tres órdenes de magnitud.
+
+Que la diferencia entre las dos arquitecturas quepa en un `forward` de dos
+líneas no es una simplificación: en word2vec la asimetría real no está en el
+modelo sino en **los pares** que le llegan (ver `src.dataset`). El mismo
+negative sampling, la misma loss y el mismo optimizador entrenan a las dos.
 """
 
 from __future__ import annotations
@@ -32,13 +42,16 @@ import torch
 from torch import nn
 
 from src import configure_console
+from src.config import arch as config_arch
 from src.config import load_config, vocab_path
 from src.vocabulary import Vocabulary
 
 __all__ = [
     "masked_mean",
     "NegativeSampler",
+    "Word2VecModel",
     "CBOWModel",
+    "SkipGramModel",
     "build_model_from_config",
 ]
 
@@ -129,14 +142,23 @@ class NegativeSampler(nn.Module):
         return f"NegativeSampler(vocab_size={self.vocab_size}, power=0.75)"
 
 
-class CBOWModel(nn.Module):
-    """Continuous Bag of Words con negative sampling.
+class Word2VecModel(nn.Module):
+    """Base común de CBOW y skip-gram: las dos matrices, el puntaje y la loss.
+
+    Es abstracta: `forward` —el único paso donde las arquitecturas difieren— lo
+    define cada subclase. Todo lo demás (inicialización, negative sampling,
+    softmax completo, exportación de embeddings) se comparte, así que un cambio
+    en la loss o en la inicialización afecta a las dos por construcción y no hay
+    forma de que se desincronicen.
 
     Args:
         vocab_size: tamaño del vocabulario (incluye `<UNK>`).
         embedding_dim: dimensión de los vectores.
         seed: semilla para la inicialización, para que sea reproducible.
     """
+
+    #: Nombre de la arquitectura; lo fija cada subclase.
+    ARCH: str = ""
 
     def __init__(
         self, vocab_size: int, embedding_dim: int, *, seed: int | None = None
@@ -175,17 +197,11 @@ class CBOWModel(nn.Module):
     # -- pasos del forward, separados para poder inspeccionarlos ----------
 
     def forward(self, context: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """Proyecta un batch de contextos al espacio de embeddings.
+        """Proyecta un batch de entradas al espacio de embeddings: `(B, D)`.
 
-        Args:
-            context: `(B, 2C)` índices de las palabras de contexto.
-            mask: `(B, 2C)` 1 en las posiciones reales, 0 en el relleno.
-
-        Returns:
-            `(B, D)` — el vector que resume cada contexto.
+        Es lo único que cambia entre CBOW y skip-gram.
         """
-        vectors = self.input_embeddings(context)        # (B, 2C, D)
-        return masked_mean(vectors, mask)               # (B, D)
+        raise NotImplementedError
 
     def score(self, projection: torch.Tensor, words: torch.Tensor) -> torch.Tensor:
         """Puntaje (producto punto) entre cada proyección y palabras candidatas.
@@ -220,8 +236,9 @@ class CBOWModel(nn.Module):
         estable con puntajes grandes en valor absoluto.
 
         Args:
-            context: `(B, 2C)`; mask: `(B, 2C)`; target: `(B,)`;
-            negatives: `(B, K)`.
+            context: `(B, W)`; mask: `(B, W)`; target: `(B,)`;
+            negatives: `(B, K)`. `W` es `2 * context_size` en CBOW y 1 en
+            skip-gram.
 
         Returns:
             Escalar.
@@ -258,33 +275,100 @@ class CBOWModel(nn.Module):
 
     def __repr__(self) -> str:
         return (
-            f"CBOWModel(vocab_size={self.vocab_size}, "
+            f"{type(self).__name__}(vocab_size={self.vocab_size}, "
             f"embedding_dim={self.embedding_dim}, "
             f"parámetros={self.n_parameters():,})"
         )
 
 
+class CBOWModel(Word2VecModel):
+    """Continuous Bag of Words: predice el centro desde el promedio del contexto."""
+
+    ARCH = "cbow"
+
+    def forward(self, context: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """Promedia los embeddings del contexto, ignorando el relleno.
+
+        Args:
+            context: `(B, 2C)` índices de las palabras de contexto.
+            mask: `(B, 2C)` 1 en las posiciones reales, 0 en el relleno.
+
+        Returns:
+            `(B, D)` — el vector que resume cada contexto.
+        """
+        vectors = self.input_embeddings(context)        # (B, 2C, D)
+        return masked_mean(vectors, mask)               # (B, D)
+
+
+class SkipGramModel(Word2VecModel):
+    """Skip-gram: predice cada palabra del contexto desde el centro.
+
+    La proyección es directamente el embedding de la palabra central, sin
+    promediar nada: la entrada trae un solo índice. La máscara llega igual —toda
+    de unos— porque el contrato del batch es común a las dos arquitecturas
+    (ver `src.dataset.generate_skipgram_pairs`), y aplicarla no cuesta nada.
+
+    Que no haya promedio es justamente lo que hace a skip-gram mejor con
+    palabras poco frecuentes: en CBOW el vector de una palabra rara entra
+    diluido entre otras tres o nueve del contexto y casi no recibe gradiente
+    propio; acá cada par la pone sola del lado de la entrada.
+    """
+
+    ARCH = "skipgram"
+
+    def forward(self, context: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """Devuelve el embedding de la palabra central.
+
+        Args:
+            context: `(B, 1)` —o `(B,)`— índices de la palabra central.
+            mask: `(B, 1)`, todo unos. Se acepta por uniformidad del batch.
+
+        Returns:
+            `(B, D)`.
+        """
+        if context.dim() == 1:
+            return self.input_embeddings(context)       # (B, D)
+        vectors = self.input_embeddings(context)        # (B, 1, D)
+        return masked_mean(vectors, mask)               # (B, D)
+
+
+#: Qué clase le toca a cada arquitectura.
+_MODELO_POR_ARCH = {
+    "cbow": CBOWModel,
+    "skipgram": SkipGramModel,
+}
+
+
 def build_model_from_config(
     config: dict, vocab: Vocabulary
-) -> tuple[CBOWModel, NegativeSampler]:
+) -> tuple[Word2VecModel, NegativeSampler]:
     """Arma el modelo y el muestreador a partir de un YAML y su vocabulario.
+
+    La arquitectura sale de la llave `arch` de la configuración; es el único
+    lugar del módulo que la mira. El resto del pipeline recibe un
+    `Word2VecModel` y no necesita saber cuál de las dos es.
 
     El tamaño del modelo sale del vocabulario real, no del `vocab_size` del
     YAML: si el vocabulario quedó más chico (por `min_count`), la matriz tiene
     que coincidir con él o los índices no cierran.
     """
     seed = config.get("seed", 42)
-    model = CBOWModel(len(vocab), config["embedding_dim"], seed=seed)
+    cls = _MODELO_POR_ARCH[config_arch(config)]
+    model = cls(len(vocab), config["embedding_dim"], seed=seed)
     sampler = NegativeSampler(vocab.counts, seed=seed)
     return model, sampler
 
 
 def _main() -> None:
     configure_console()
-    parser = argparse.ArgumentParser(description="Inspecciona el modelo CBOW.")
+    parser = argparse.ArgumentParser(
+        description="Inspecciona el modelo de una configuración."
+    )
     parser.add_argument("--config", default="configs/piloto_5k_50_2.yaml")
     parser.add_argument("--batch-size", type=int, default=8)
     args = parser.parse_args()
+
+    from src.dataset import input_width
 
     config = load_config(args.config)
     vocab = Vocabulary.load(vocab_path(config))
@@ -294,7 +378,7 @@ def _main() -> None:
     model.to(device)
     sampler.to(device)
 
-    context_width = 2 * config["context_size"]
+    context_width = input_width(config_arch(config), config["context_size"])
     k = config["negative_samples"]
     batch = args.batch_size
 
@@ -306,11 +390,11 @@ def _main() -> None:
     projection = model(context, mask)
     loss = model.negative_sampling_loss(context, mask, target, negatives)
 
-    print(f"config     : {config['name']} | dispositivo: {device}")
+    print(f"config     : {config['name']} | arch: {config_arch(config)} | dispositivo: {device}")
     print(f"modelo     : {model}")
     print(f"muestreador: {sampler}")
     print()
-    print(f"contexto   : {tuple(context.shape)}")
+    print(f"entrada    : {tuple(context.shape)}")
     print(f"máscara    : {tuple(mask.shape)}")
     print(f"proyección : {tuple(projection.shape)}")
     print(f"negativos  : {tuple(negatives.shape)}")

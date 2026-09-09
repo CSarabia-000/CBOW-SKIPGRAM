@@ -1,0 +1,56 @@
+# Corrida PILOTO de SKIP-GRAM: el gemelo exacto de piloto_5k_50_2, cambiando
+# UNA sola cosa (`arch`). Todo lo demas -corpus, vocabulario, tokenizacion,
+# contexto, dimension, lr, epocas, semilla- se deja identico a proposito: es lo
+# que permite atribuir cualquier diferencia de resultados a la arquitectura y no
+# a otra variable que se movio de paso.
+#
+# Que esperar al correrla, para no confundir un costo con un problema:
+#
+#   1. Cada epoca produce MUCHOS mas pares. CBOW genera 1 par por token;
+#      skip-gram genera uno por vecino, hasta 2*context_size = 4 (menos en los
+#      bordes de cada oracion). O sea ~3.5x mas pares por epoca, y por lo tanto
+#      ~3.5x mas tiempo y mas pasos de optimizacion sobre el mismo texto.
+#
+#   2. La loss NO es comparable con la de piloto_5k_50_2. No es la misma tarea:
+#      una adivina el centro desde su contexto y la otra un vecino desde el
+#      centro. La comparacion valida es la precision en analogias (y `mcnemar`
+#      sobre los mismos items). `comparable_loss` en src/compare.py ya separa
+#      las dos familias para que no se crucen por accidente.
+#
+# Se entrena con:
+#   python -m src.train --config configs/piloto_sg_5k_50_2.yaml
+#
+name: "piloto_sg_5k_50_2"
+arch: "skipgram"             # <-- lo unico que cambia respecto de piloto_5k_50_2
+vocab_from: "base_5k_50_2"   # mismo vocabulario que CBOW: mismo espacio de indices
+
+# --- Corpus (Fase 1) ---
+corpus_path: "data/processed/muestra_2m.txt"
+corpus_sample_fraction: 1.0   # el archivo YA es la muestra; aca se lee entero
+
+# Deben coincidir con las del vocabulario prestado, o los indices no significan
+# lo mismo que cuando se conto.
+tokenizer:
+  lowercase: true
+  number_token: "<NUM>"
+  min_length: 1
+
+# --- Vocabulario (Fase 2) --- solo informativo: no se reconstruye
+vocab_size: 5000
+min_count: 5
+subsampling_threshold: 1.0e-5
+
+# --- Pares (Fase 3) --- misma ventana que CBOW, leida al reves
+context_size: 2
+drop_unknown: true
+
+# --- Modelo y entrenamiento (Fases 4-5) ---
+validation_sentences: 20000   # primeras N oraciones reservadas para validar
+embedding_dim: 50
+batch_size: 512
+learning_rate: 0.003
+epochs: 15                # mismas epocas que el piloto CBOW: mismas pasadas
+                          # sobre el corpus. Cuestan ~3.5x mas tiempo cada una.
+negative_samples: 10
+
+seed: 42

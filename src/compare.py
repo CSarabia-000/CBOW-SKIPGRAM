@@ -7,12 +7,17 @@ qué conviene escalar. No entrena nada: solo lee artefactos ya producidos.
 Tres cuidados al comparar, que este módulo hace explícitos porque son fáciles de
 pasar por alto:
 
-1. **La loss no cruza tamaños de contexto.** Predecir un target desde hasta 10
-   palabras es una tarea más fácil que desde 4, así que una corrida con
-   `context_size=5` tendrá menor loss que una con `context_size=2` aunque no
-   haya aprendido nada mejor. `comparable_loss` marca qué filas se pueden
-   comparar entre sí. La métrica que sí cruza todas las configuraciones es la
-   precisión en analogías.
+1. **La loss no cruza tamaños de contexto ni arquitecturas.** Predecir un
+   target desde hasta 10 palabras es una tarea más fácil que desde 4, así que
+   una corrida con `context_size=5` tendrá menor loss que una con
+   `context_size=2` aunque no haya aprendido nada mejor. Entre CBOW y skip-gram
+   la brecha es todavía menos interpretable: no resuelven una versión más fácil
+   o más difícil de la misma tarea, resuelven **tareas distintas** (adivinar el
+   centro desde su contexto vs. adivinar un vecino desde el centro), sobre
+   conjuntos de pares de tamaños distintos. `comparable_loss` marca qué filas se
+   pueden comparar entre sí. La métrica que sí cruza todas las configuraciones
+   —y la única que vale para elegir entre CBOW y skip-gram— es la precisión en
+   analogías, con su intervalo y, mejor aún, con `mcnemar`.
 
 2. **La precisión en analogías tiene ruido.** Son unos 286 ítems: al 41% de
    precisión, el intervalo de confianza del 95% mide unos ±6 puntos. Por eso
@@ -36,6 +41,7 @@ from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
 from src import configure_console
+from src.config import arch as config_arch
 from src.config import checkpoint_dir, load_config
 from src.evaluate import evaluate_analogies, load_embeddings, nearest_neighbors
 from src.export import embeddings_path
@@ -158,12 +164,18 @@ def run_summary(
 
     return {
         "name": config["name"],
+        "arch": config_arch(config),
         "embedding_dim": config["embedding_dim"],
         "context_size": config["context_size"],
         "drop_unknown": config.get("drop_unknown", True),
         # La loss solo es comparable entre corridas que resuelven la misma
-        # tarea: mismo contexto y mismo tratamiento de los OOV.
-        "comparable_loss": (config["context_size"], config.get("drop_unknown", True)),
+        # tarea: misma arquitectura, mismo contexto y mismo tratamiento de los
+        # OOV.
+        "comparable_loss": (
+            config_arch(config),
+            config["context_size"],
+            config.get("drop_unknown", True),
+        ),
         "epochs": len(history),
         "params": len(vocab) * config["embedding_dim"] * 2,
         "train_loss": history[-1]["train_loss"],
@@ -213,14 +225,16 @@ def cross_validation_loss(
     ambos sobre el mismo stream (el de `data_config`) los dos números vuelven a
     ser la misma pregunta.
 
-    `model_config` y `data_config` tienen que coincidir en `embedding_dim` y en
-    `context_size`, o los tensores no encajan.
+    `model_config` y `data_config` tienen que coincidir en `arch`,
+    `embedding_dim` y `context_size`: con distinta arquitectura el stream ni
+    siquiera tiene la forma que el modelo espera, y aunque la tuviera estaría
+    puntuando otra tarea.
     """
     import torch
     from torch.utils.data import DataLoader
 
     from src.config import vocab_path
-    from src.dataset import CBOWIterableDataset
+    from src.dataset import build_dataset_from_config
     from src.model import build_model_from_config
     from src.train import _resolve_device, evaluate_loss, load_checkpoint
 
@@ -229,6 +243,12 @@ def cross_validation_loss(
     if not isinstance(data_config, Mapping):
         data_config = load_config(data_config)
 
+    if config_arch(model_config) != config_arch(data_config):
+        raise ValueError(
+            "no se pueden cruzar configuraciones de distinta arquitectura: "
+            f"{config_arch(model_config)} vs {config_arch(data_config)}. "
+            "Para comparar CBOW con skip-gram usá la precisión en analogías."
+        )
     for clave in ("embedding_dim", "context_size"):
         if model_config[clave] != data_config[clave]:
             raise ValueError(
@@ -245,7 +265,7 @@ def cross_validation_loss(
     model.to(device_obj)
 
     n_validation = int(data_config.get("validation_sentences", 0))
-    dataset = CBOWIterableDataset.from_config(data_config, vocab, limit=n_validation)
+    dataset = build_dataset_from_config(data_config, vocab, limit=n_validation)
     loader = DataLoader(
         dataset,
         batch_size=data_config["batch_size"],
@@ -266,7 +286,7 @@ def cross_validation_loss(
 
 def _format_table(rows: Sequence[Mapping]) -> str:
     cabecera = (
-        f"{'corrida':<22} {'dim':>4} {'ctx':>4} {'unk':>4} "
+        f"{'corrida':<22} {'arch':>9} {'dim':>4} {'ctx':>4} {'unk':>4} "
         f"{'val loss':>9} {'analogías':>10} {'IC 95%':>16} "
         f"{'min/época':>10} {'MB':>6}"
     )
@@ -275,7 +295,8 @@ def _format_table(rows: Sequence[Mapping]) -> str:
         lo, hi = r["accuracy_ci"]
         val = "-" if r["val_loss"] is None else f"{r['val_loss']:.4f}"
         lineas.append(
-            f"{r['name']:<22} {r['embedding_dim']:>4} {r['context_size']:>4} "
+            f"{r['name']:<22} {r.get('arch', 'cbow'):>9} "
+            f"{r['embedding_dim']:>4} {r['context_size']:>4} "
             f"{'sí' if not r['drop_unknown'] else 'no':>4} "
             f"{val:>9} "
             f"{r['accuracy']:>9.1%} "

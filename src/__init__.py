@@ -1,4 +1,9 @@
-"""Código reutilizable del proyecto CBOW sobre el Spanish Billion Word Corpus."""
+"""Código reutilizable del proyecto word2vec sobre el Spanish Billion Word Corpus.
+
+El mismo pipeline entrena las dos arquitecturas: la llave `arch` de cada YAML de
+`configs/` elige entre `"cbow"` y `"skipgram"`, y solo `src.dataset` y
+`src.model` la miran.
+"""
 
 from __future__ import annotations
 

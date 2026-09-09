@@ -4,6 +4,12 @@ Cada configuración (`configs/*.yaml`) define una corrida completa. Los módulos
 reciben la ruta al YAML y de ahí sacan tanto los hiperparámetros como las rutas
 de sus artefactos, para que escalar a otra combinación de la grilla sea solo
 agregar un archivo nuevo en `configs/`.
+
+La llave `arch` elige la arquitectura (`"cbow"` o `"skipgram"`). Es el único
+lugar donde se decide: `src.dataset` y `src.model` despachan a partir de ella y
+el resto del pipeline (corpus, vocabulario, entrenamiento, evaluación,
+exportación) es idéntico para las dos. Las configuraciones escritas antes de que
+existiera skip-gram no la declaran, así que el valor por defecto es `"cbow"`.
 """
 
 from __future__ import annotations
@@ -14,7 +20,9 @@ import yaml
 
 __all__ = [
     "PROJECT_ROOT",
+    "ARCHS",
     "load_config",
+    "arch",
     "corpus_path",
     "processed_dir",
     "vocab_owner",
@@ -26,6 +34,10 @@ __all__ = [
 
 #: Raíz del proyecto (el directorio que contiene `src/`).
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+#: Arquitecturas soportadas. `"cbow"` predice el target desde el promedio de su
+#: contexto; `"skipgram"` predice cada palabra del contexto desde el target.
+ARCHS = ("cbow", "skipgram")
 
 
 def load_config(path: str | Path) -> dict:
@@ -43,7 +55,23 @@ def load_config(path: str | Path) -> dict:
         raise ValueError(f"{path} no contiene un diccionario de configuración")
     config.setdefault("name", path.stem)
     config.setdefault("tokenizer", {})
+    config.setdefault("arch", "cbow")
+    if config["arch"] not in ARCHS:
+        raise ValueError(
+            f"{path}: arch={config['arch']!r} no es una arquitectura conocida "
+            f"(esperaba una de {ARCHS})"
+        )
     return config
+
+
+def arch(config: dict) -> str:
+    """Arquitectura de la corrida: `"cbow"` o `"skipgram"`.
+
+    Se lee con `.get()` y no con `config["arch"]` porque los diccionarios de
+    configuración guardados dentro de checkpoints viejos —entrenados antes de
+    que existiera skip-gram— no tienen la llave.
+    """
+    return config.get("arch", "cbow")
 
 
 def corpus_path(config: dict) -> Path:
