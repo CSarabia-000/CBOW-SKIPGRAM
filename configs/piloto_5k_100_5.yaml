@@ -1,0 +1,31 @@
+# FASE 7 - Grilla: esquina dim=100 x contexto=5.
+#
+# La cuarta celda del factorial 2x2. Sirve para ver si los efectos de dimension
+# y contexto se suman o si interactuan (por ejemplo: si la dimension extra solo
+# rinde cuando hay mas contexto que codificar).
+name: "piloto_5k_100_5"
+vocab_from: "base_5k_50_2"
+
+corpus_path: "data/processed/muestra_2m.txt"
+corpus_sample_fraction: 1.0
+
+tokenizer:
+  lowercase: true
+  number_token: "<NUM>"
+  min_length: 1
+
+vocab_size: 5000
+min_count: 5
+subsampling_threshold: 1.0e-5
+
+context_size: 5           # <-- las dos variables a la vez
+drop_unknown: true
+
+validation_sentences: 20000
+embedding_dim: 100        # <--
+batch_size: 512
+learning_rate: 0.003
+epochs: 15
+negative_samples: 10
+
+seed: 42

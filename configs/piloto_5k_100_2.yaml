@@ -1,0 +1,32 @@
+# FASE 7 - Grilla: efecto de la DIMENSION.
+#
+# Identica a piloto_5k_50_2.yaml salvo embedding_dim (50 -> 100). Todo lo demas
+# se mantiene fijo a proposito: mismo vocabulario prestado, mismo archivo de
+# muestra, mismas epocas, mismo lr, misma semilla. Cualquier diferencia en las
+# metricas es atribuible a la dimension.
+name: "piloto_5k_100_2"
+vocab_from: "base_5k_50_2"
+
+corpus_path: "data/processed/muestra_2m.txt"
+corpus_sample_fraction: 1.0
+
+tokenizer:
+  lowercase: true
+  number_token: "<NUM>"
+  min_length: 1
+
+vocab_size: 5000
+min_count: 5
+subsampling_threshold: 1.0e-5
+
+context_size: 2
+drop_unknown: true
+
+validation_sentences: 20000
+embedding_dim: 100        # <-- la variable
+batch_size: 512
+learning_rate: 0.003
+epochs: 15
+negative_samples: 10
+
+seed: 42

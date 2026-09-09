@@ -1,0 +1,18 @@
+# Datos y artefactos pesados
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+checkpoints/*
+!checkpoints/.gitkeep
+embeddings/*
+!embeddings/.gitkeep
+
+# Entorno
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/

@@ -1,0 +1,54 @@
+# Corrida PILOTO: misma configuracion que base.yaml pero sobre una muestra
+# aleatoria de 2M oraciones (~2% del corpus) en vez de las 95,8M completas.
+#
+# Objetivo: validar el pipeline de entrenamiento, evaluacion y exportacion en
+# minutos en vez de horas, y tener una primera lectura de la calidad de los
+# embeddings antes de comprometerse a la corrida completa.
+#
+# Dos decisiones que hacen que el piloto sea comparable con la corrida final:
+#
+#   1. `vocab_from` reutiliza el vocabulario ya construido sobre el corpus
+#      COMPLETO. El piloto entrena en el mismo espacio de indices que la corrida
+#      definitiva, asi que sus embeddings y sus metricas se pueden comparar
+#      directamente. No se reconstruye ningun vocabulario.
+#
+#   2. La muestra se genero con `corpus_sample_fraction` y se materializo a un
+#      .txt, en vez de tomar las primeras N oraciones. El corpus arranca con
+#      texto coranico y actas del Parlamento Europeo, asi que un prefijo NO es
+#      una muestra del idioma. Se genero con:
+#
+#        python -m src.corpus --sample-to data/processed/muestra_2m.txt \
+#                             --sample-fraction 0.020877
+#
+name: "piloto_5k_50_2"
+vocab_from: "base_5k_50_2"   # reutiliza data/processed/base_5k_50_2/vocab.json
+
+# --- Corpus (Fase 1) ---
+corpus_path: "data/processed/muestra_2m.txt"
+corpus_sample_fraction: 1.0   # el archivo YA es la muestra; aca se lee entero
+
+# Deben coincidir con las del vocabulario prestado, o los indices no significan
+# lo mismo que cuando se conto.
+tokenizer:
+  lowercase: true
+  number_token: "<NUM>"
+  min_length: 1
+
+# --- Vocabulario (Fase 2) --- solo informativo: no se reconstruye
+vocab_size: 5000
+min_count: 5
+subsampling_threshold: 1.0e-5
+
+# --- Pares contexto-target (Fase 3) ---
+context_size: 2
+drop_unknown: true
+
+# --- Modelo y entrenamiento (Fases 4-5) ---
+validation_sentences: 20000   # primeras N oraciones reservadas para validar
+embedding_dim: 50
+batch_size: 512
+learning_rate: 0.003
+epochs: 15                # mas epocas que en base: cada una cuesta segundos
+negative_samples: 10
+
+seed: 42

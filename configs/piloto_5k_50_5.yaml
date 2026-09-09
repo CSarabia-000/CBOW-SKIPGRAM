@@ -1,0 +1,32 @@
+# FASE 7 - Grilla: efecto del CONTEXTO.
+#
+# Identica a piloto_5k_50_2.yaml salvo context_size (2 -> 5). Ojo al comparar:
+# la loss NO es comparable contra las corridas de contexto 2, porque la tarea
+# cambia (predecir el target desde hasta 10 palabras es mas facil que desde 4).
+# La metrica que cruza contextos es la precision en analogias.
+name: "piloto_5k_50_5"
+vocab_from: "base_5k_50_2"
+
+corpus_path: "data/processed/muestra_2m.txt"
+corpus_sample_fraction: 1.0
+
+tokenizer:
+  lowercase: true
+  number_token: "<NUM>"
+  min_length: 1
+
+vocab_size: 5000
+min_count: 5
+subsampling_threshold: 1.0e-5
+
+context_size: 5           # <-- la variable
+drop_unknown: true
+
+validation_sentences: 20000
+embedding_dim: 50
+batch_size: 512
+learning_rate: 0.003
+epochs: 15
+negative_samples: 10
+
+seed: 42

@@ -1,0 +1,32 @@
+# Configuracion base del proyecto CBOW sobre SBWC: vocab=5k / dim=50 / contexto=2.
+# Para escalar, copiar este archivo y cambiar solo los valores (no el codigo de src/).
+name: "base_5k_50_2"
+
+# --- Corpus (Fase 1) ---
+corpus_path: "data/raw/sbwce.clean.txt.bz2"
+corpus_sample_fraction: 1.0   # <1.0 = muestreo aleatorio de lineas, para pruebas rapidas
+
+# Opciones de tokenizacion (se pasan tal cual a src.corpus.tokenize)
+tokenizer:
+  lowercase: true
+  number_token: "<NUM>"       # null para descartar los numeros en vez de normalizarlos
+  min_length: 1
+
+# --- Vocabulario (Fase 2) ---
+vocab_size: 5000
+min_count: 5
+subsampling_threshold: 1.0e-5
+
+# --- Pares contexto-target (Fase 3) ---
+context_size: 2
+drop_unknown: true       # eliminar los OOV de la oracion en vez de dejarlos como <UNK>
+
+# --- Modelo y entrenamiento (Fases 4-5) ---
+validation_sentences: 50000   # primeras N oraciones reservadas para validar
+embedding_dim: 50
+batch_size: 512
+learning_rate: 0.003
+epochs: 5
+negative_samples: 10
+
+seed: 42

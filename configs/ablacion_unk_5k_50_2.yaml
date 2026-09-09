@@ -1,0 +1,45 @@
+# FASE 7 - Ablacion: entrenar CON <UNK> en vez de descartar los OOV.
+#
+# Identica a piloto_5k_50_2.yaml salvo drop_unknown (true -> false). Con false,
+# las palabras fuera de vocabulario se convierten en <UNK> (indice 0) y entran
+# al entrenamiento como contexto y como target, en vez de eliminarse de la
+# oracion.
+#
+# Dos advertencias para leer los resultados:
+#
+#   1. <UNK> es el 16,7% de los tokens del corpus, asi que el subsampling lo
+#      descarta el 99,2% de las veces (sqrt(1e-5/0,167) = 0,0077). Termina
+#      siendo ~1% del stream de entrenamiento, aunque sigue siendo el token mas
+#      frecuente que ve el modelo (~1,5x mas que "de").
+#
+#   2. La loss de esta corrida NO se compara contra la del piloto: predecir el
+#      token mas frecuente del corpus es trivial, asi que <UNK> BAJA la loss sin
+#      que eso signifique aprender mejor. La comparacion honesta es (a) evaluar
+#      ambos modelos sobre un mismo conjunto de validacion SIN <UNK>, y (b) la
+#      precision en analogias, que solo usa palabras reales.
+name: "ablacion_unk_5k_50_2"
+vocab_from: "base_5k_50_2"
+
+corpus_path: "data/processed/muestra_2m.txt"
+corpus_sample_fraction: 1.0
+
+tokenizer:
+  lowercase: true
+  number_token: "<NUM>"
+  min_length: 1
+
+vocab_size: 5000
+min_count: 5
+subsampling_threshold: 1.0e-5
+
+context_size: 2
+drop_unknown: false       # <-- la variable
+
+validation_sentences: 20000
+embedding_dim: 50
+batch_size: 512
+learning_rate: 0.003
+epochs: 15
+negative_samples: 10
+
+seed: 42
