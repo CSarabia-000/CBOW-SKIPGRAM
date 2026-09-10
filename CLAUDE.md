@@ -223,3 +223,31 @@ nada más. Cualquier configuración anterior a esta fase no declara `arch` y
 `load_config` le pone `"cbow"`, así que las corridas ya entrenadas siguen
 funcionando sin tocar sus YAML.
 
+### Resultado medido (no repetir el experimento esperando otra cosa)
+
+**Empate**: 40,2% skip-gram contra 41,3% CBOW en analogías, McNemar p = 0,74, con
+2,77x los pares y 2,09x el tiempo. Ninguna categoría se salva.
+
+La hipótesis de que skip-gram gana con palabras poco frecuentes **no se pudo
+probar acá**, y la razón importa para cualquier repetición: con vocabulario de
+5.000 sobre 2.028M de tokens no hay palabras raras —la última del vocabulario
+(`cercana`) aparece 33.838 veces—, así que el mecanismo no tiene dónde actuar. La
+prueba real pide vocabulario 20k+ sobre el corpus completo. No tiene sentido
+volver a correr esta misma comparación con otra semilla o más épocas esperando que
+cambie.
+
+También ojo con desagregar por frecuencia: los rangos mezclan categorías de
+analogía en proporciones muy distintas (el rango 1-500 es 54% `plural`, el
+3000-5000 es 100% `país → gentilicio`), así que los niveles entre rangos no son
+comparables. Solo vale la comparación pareada dentro de cada rango.
+
+### Costo por época: usar la mediana, no el promedio
+
+`history.json` guarda reloj de pared. Si la máquina se suspende a mitad de una
+época, esa época queda con las horas de siesta adentro. Pasó en las dos corridas
+comparadas (una época de 1.151s en `piloto_5k_50_2`, una de 7.294s en
+`piloto_sg_5k_50_2`) y en el primer caso llegó a invertir la conclusión de costo
+de la Fase 7, haciendo parecer que la corrida más chica era la más lenta.
+`run_summary` devuelve `seconds_per_epoch` (promedio, como siempre) y
+`seconds_per_epoch_median`; para costo, usar la mediana.
+

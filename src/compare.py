@@ -37,7 +37,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from pathlib import Path
+from statistics import median
 from typing import Iterable, Mapping, Sequence
 
 from src import configure_console
@@ -184,6 +186,12 @@ def run_summary(
         "pairs_per_epoch": history[-1]["pairs"],
         "seconds_total": sum(r["seconds"] for r in history),
         "seconds_per_epoch": sum(r["seconds"] for r in history) / len(history),
+        # El promedio mide reloj de pared, no cómputo: si la máquina se suspende
+        # a mitad de una época, esa época se registra con las horas de siesta
+        # incluidas y el promedio queda inservible como medida de costo. Pasó en
+        # `piloto_sg_5k_50_2` (una época de 7.294s entre otras de ~330s). La
+        # mediana ignora ese tipo de valor sin tener que borrar el dato a mano.
+        "seconds_per_epoch_median": median(r["seconds"] for r in history),
         "pairs_per_second": history[-1]["pairs"] / history[-1]["seconds"],
         "accuracy": analogias["accuracy"],
         "accuracy_correct": analogias["correct"],
@@ -284,12 +292,32 @@ def cross_validation_loss(
     )
 
 
+def _rotulos(filas: Sequence[Mapping], ancho: int = 12) -> list[str]:
+    """Nombres cortos y **distinguibles** de las corridas, para encabezar columnas.
+
+    Recortar cada nombre por su cuenta no sirve: `piloto_5k_50_2` y
+    `piloto_sg_5k_50_2` comparten los últimos ocho caracteres, así que dos
+    columnas distintas quedaban rotuladas igual (`_5k_50_2` las dos). Lo que las
+    distingue está en el medio, después del prefijo que tienen en común, así que
+    lo que se saca es ese prefijo y no el final.
+    """
+    nombres = [f["name"] for f in filas]
+    prefijo = len(os.path.commonprefix(nombres)) if len(nombres) > 1 else 0
+    cortos = [n[prefijo:] or n for n in nombres]
+    # Si aun así no entran, recién ahí se recorta (y ya sin prefijo común, el
+    # final es lo que distingue).
+    return [c if len(c) <= ancho else "…" + c[-(ancho - 1):] for c in cortos]
+
+
 def _format_table(rows: Sequence[Mapping]) -> str:
     cabecera = (
         f"{'corrida':<22} {'arch':>9} {'dim':>4} {'ctx':>4} {'unk':>4} "
         f"{'val loss':>9} {'analogías':>10} {'IC 95%':>16} "
-        f"{'min/época':>10} {'MB':>6}"
+        f"{'min/ép.~':>10} {'MB':>6}"
     )
+    # `min/ép.~` es la MEDIANA de las épocas, no el promedio: el promedio mide
+    # reloj de pared y una suspensión de la máquina a mitad de una época lo
+    # arruina (ver `seconds_per_epoch_median` en `run_summary`).
     lineas = [cabecera, "-" * len(cabecera)]
     for r in rows:
         lo, hi = r["accuracy_ci"]
@@ -301,7 +329,7 @@ def _format_table(rows: Sequence[Mapping]) -> str:
             f"{val:>9} "
             f"{r['accuracy']:>9.1%} "
             f"{f'[{lo:.1%}, {hi:.1%}]':>16} "
-            f"{r['seconds_per_epoch'] / 60:>10.1f} "
+            f"{r['seconds_per_epoch_median'] / 60:>10.1f} "
             f"{r['checkpoint_bytes'] / 1024**2:>6.1f}"
         )
     return "\n".join(lineas)
@@ -329,7 +357,7 @@ def _main() -> None:
     print("\nPRECISIÓN POR CATEGORÍA")
     categorias = list(filas[0]["categories"])
     ancho = max(len(c) for c in categorias)
-    print(f"{'categoría':<{ancho}} " + " ".join(f"{r['name'][-8:]:>12}" for r in filas))
+    print(f"{'categoría':<{ancho}} " + " ".join(f"{r:>12}" for r in _rotulos(filas)))
     for categoria in categorias:
         celdas = []
         for fila in filas:

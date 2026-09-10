@@ -29,16 +29,16 @@ nuevo en `configs/`.
 | 5. Entrenamiento | `src/train.py` | `04_entrenamiento.ipynb` | ✅ implementada |
 | 6. Evaluación y exportación | `src/evaluate.py`, `src/export.py` | `05_evaluacion_embeddings.ipynb` | ✅ implementada |
 | 7. Comparación de configuraciones | `src/compare.py` | `06_comparacion_configuraciones.ipynb` | ✅ implementada |
-| 8. Skip-gram | `src/dataset.py`, `src/model.py` | *(pendiente: 07)* | ⚙️ implementada, sin entrenar |
+| 8. Skip-gram | `src/dataset.py`, `src/model.py` | `07_skipgram.ipynb` | ✅ implementada y medida |
 
 **Artefactos ya producidos**:
 
 - `data/processed/base_5k_50_2/vocab.json` — vocabulario de 5.000 palabras
   construido sobre el **corpus completo**
 - `data/processed/muestra_2m.txt` — muestra aleatoria de 2M de oraciones (242 MB)
-- **cinco corridas entrenadas** (4 de la grilla + 1 ablación), cada una con sus
-  15 checkpoints, `best.pt`, `last.pt`, `history.json` y sus embeddings
-  exportados en `.txt` y `.bin`, validados con gensim
+- **seis corridas entrenadas** (4 de la grilla + 1 ablación + 1 skip-gram), cada
+  una con sus 15 checkpoints, `best.pt`, `last.pt`, `history.json` y sus
+  embeddings exportados en `.txt` y `.bin`, validados con gensim
 
 > **Configuración recomendada: `piloto_5k_100_2`** (dim 100, contexto 2), la
 > mejor de la grilla con 54,2% en analogías. Ver *Fase 7*.
@@ -47,10 +47,11 @@ nuevo en `configs/`.
 > primeras seis fases con un ejemplo y un gráfico por fase. Los notebooks 01-05
 > tienen el detalle de cada una, y el 06 es la comparativa de la Fase 7.
 
-> **Estado de la Fase 8 (skip-gram):** el código está listo y probado de punta a
-> punta, pero **todavía no hay ninguna corrida skip-gram entrenada**. La
-> configuración `configs/piloto_sg_5k_50_2.yaml` es el gemelo exacto del piloto
-> CBOW (cambia `arch` y nada más) y está lista para lanzarse. Ver *Fase 8*.
+> **Resultado de la Fase 8 (skip-gram):** empate. 40,2% contra 41,3% de CBOW,
+> McNemar p = 0,74, con el doble de costo. Con vocabulario de 5.000 palabras la
+> arquitectura no mueve la aguja; la dimensión sí (+12,9 pp en la Fase 7). Ver
+> *Fase 8* para por qué el experimento no pudo probar la hipótesis de las palabras
+> poco frecuentes.
 
 ---
 
@@ -306,12 +307,20 @@ Factorial 2×2 (dim ∈ {50, 100} × contexto ∈ {2, 5}) con **todo lo demás f
 mismo vocabulario prestado, mismas 2M de oraciones, mismas 15 épocas, mismo lr,
 misma semilla. Las cuatro corridas tardaron 2h47 en total.
 
-| Corrida | dim | ctx | val loss | analogías | IC 95% | min/época | checkpoint |
+| Corrida | dim | ctx | val loss | analogías | IC 95% | min/época* | checkpoint |
 |---|---|---|---|---|---|---|---|
-| `piloto_5k_50_2` | 50 | 2 | 2,6430 | 41,3% | [35,7%, 47,0%] | 3,8 | 5,7 MB |
+| `piloto_5k_50_2` | 50 | 2 | 2,6430 | 41,3% | [35,7%, 47,0%] | 2,6 | 5,7 MB |
 | **`piloto_5k_100_2`** | **100** | **2** | **2,6128** | **54,2%** | [48,4%, 59,9%] | 2,6 | 11,4 MB |
 | `piloto_5k_50_5` | 50 | 5 | 2,6183 | 42,3% | [36,7%, 48,1%] | 2,7 | 5,7 MB |
 | `piloto_5k_100_5` | 100 | 5 | 2,5905 | 49,7% | [43,9%, 55,4%] | 2,8 | 11,4 MB |
+
+\* **Mediana**, no promedio. El promedio mide reloj de pared: si la máquina se
+suspende a mitad de una época, esa época queda registrada con las horas de siesta
+adentro. `piloto_5k_50_2` tiene una época de 1.151s entre catorce de ~155s, y ese
+solo dato le subía el promedio a 3,8 min/época — que es lo que decía esta tabla
+antes, y que hacía parecer que la corrida *más chica* era la *más lenta*. Con la
+mediana las cuatro caen entre 2,6 y 2,7 min. `run_summary` devuelve las dos
+(`seconds_per_epoch` y `seconds_per_epoch_median`).
 
 Las diferencias se contrastan con **McNemar pareado** sobre los mismos 286 ítems,
 no comparando dos porcentajes: los cuatro modelos responden exactamente las mismas
@@ -337,11 +346,18 @@ Y mejora justo donde el modelo era débil — las categorías morfológicas:
 | adjetivo → adverbio | 20,0% | 10,0% | 0,50 (n=20, ruido) |
 
 Duplicar la dimensión duplica los parámetros y el archivo exportado, pero **no
-cuesta tiempo**. Las tres corridas nuevas se ejecutaron encadenadas en idénticas
-condiciones y las tres rondan los 2,6-2,8 min/época, sin importar la dimensión ni
-el contexto; el cuello de botella es la CPU generando pares —el mismo trabajo en
-las cuatro—, no la GPU. (Los 3,8 min de la línea de base se midieron en otra
-sesión y no son comparables con esos tres.)
+cuesta tiempo**. Las cuatro corridas rondan los 2,6-2,7 min/época de mediana, sin
+importar la dimensión ni el contexto; el cuello de botella es la CPU generando
+pares —el mismo trabajo en las cuatro—, no la GPU.
+
+> Acá había un error que se destapó al agregar la mediana en la Fase 8. Esta
+> sección decía antes que la línea de base costaba 3,8 min/época y que ese número
+> "se midió en otra sesión y no es comparable". No era eso: catorce de sus quince
+> épocas corrieron en ~155s, exactamente igual que las otras tres corridas. Lo que
+> pasó fue **una sola época de 1.151s**, una suspensión de la máquina que el reloj
+> de pared contó como cómputo. La conclusión no cambia —la dimensión sigue sin
+> costar tiempo—, al contrario: se refuerza, porque ahora las cuatro corridas
+> coinciden en vez de tener una que desentonaba sin explicación.
 
 ### Una hipótesis refutada
 
@@ -463,6 +479,63 @@ print(mcnemar(filas[0]["items"], filas[1]["items"]))
 Para que esa comparación signifique algo, las dos corridas comparten
 `vocab_from: base_5k_50_2` — el mismo vocabulario, o sea el mismo espacio de
 índices— y son idénticas en todo lo demás.
+
+---
+
+### Resultado: empate, con el doble de costo
+
+| | CBOW | skip-gram |
+|---|---|---|
+| analogías (k=1) | **41,3%** [35,7%, 47,0%] | 40,2% [34,7%, 46,0%] |
+| pares por época | 5.009.035 | 13.865.356 (**2,77x**) |
+| min/época (mediana) | 2,6 | 5,4 (**2,09x**) |
+| total 15 épocas | 39 min | 81 min |
+
+**McNemar: p = 0,74.** De los 286 ítems, 251 se responden igual (99 bien los dos,
+152 mal los dos); discrepan en 35, repartidos 19-16. Es un empate estadístico, no
+una ventaja chica de CBOW.
+
+Por categoría no se salva ninguna: la mayor diferencia es `país → gentilicio`
+(+13,3 pp para skip-gram, p = 0,125, n = 30). `plural` —la categoría más débil de
+CBOW, y la apuesta obvia— queda en −1,1 pp con p = 1,00.
+
+### La hipótesis de las palabras poco frecuentes no se pudo probar
+
+La teoría dice que skip-gram debería ganar con palabras poco frecuentes: en CBOW
+el vector de una palabra entra promediado con los otros tres del contexto, así que
+su gradiente está diluido; en skip-gram cada par la pone sola del lado de la
+entrada. Desagregando la precisión por rango de frecuencia no aparece nada
+(+2,0 / −3,8 / −1,4 / +0,0 pp, todos con p ≥ 0,52).
+
+Pero la lectura correcta no es que la hipótesis sea falsa, sino que **este
+experimento no podía probarla**:
+
+| | palabra | ocurrencias en el corpus |
+|---|---|---|
+| rango 1 | `de` | 151.730.127 |
+| rango 1000 | `italia` | 197.551 |
+| rango 4999 (la última) | `cercana` | **33.838** |
+
+Con vocabulario de 5.000 sobre 2.028 millones de tokens **no hay palabras raras**.
+La menos frecuente aparece 33.838 veces en el corpus completo y ~707 veces en la
+muestra del 2% con la que se entrenó. El mecanismo que favorece a skip-gram
+necesita palabras que se vean pocas veces, y acá hasta la última del vocabulario
+tiene cientos de oportunidades de aprender su vector. Probarlo de verdad pide
+vocabulario 20k+ sobre el corpus completo.
+
+La única señal compatible con la hipótesis es cualitativa: skip-gram arma
+vecindarios más apretados para las palabras menos frecuentes (`orquesta`, rango
+3356, pasa de 0,78 a 0,85 con su vecino más cercano; `novela`, rango 1947, de 0,80
+a 0,85), diferencia que desaparece en las frecuentes. Mayor coseno no es lo mismo
+que mejor vecino, pero es lo que hay.
+
+### Qué queda medido
+
+**En el régimen de vocabulario chico y corpus mediano, la arquitectura no importa
+y la dimensión sí.** La Fase 7 midió +12,9 puntos por duplicar la dimensión con
+p < 0,0001; esta fase mide −1,0 punto por cambiar de arquitectura con p = 0,74.
+Para gastar cómputo, el orden quedó establecido: primero dimensión, después
+vocabulario, y la arquitectura al final.
 
 ---
 
@@ -712,12 +785,13 @@ ruido.
 
 Con la grilla montada, cada pregunta nueva es un YAML.
 
-**Lo primero: entrenar skip-gram.** El código de la Fase 8 está probado pero no
-hay ninguna corrida. `piloto_sg_5k_50_2` es el gemelo exacto del piloto CBOW y
-responde la pregunta más grande que queda abierta: si la arquitectura importa
-más o menos que la dimensión, que fue el factor dominante en la Fase 7.
+La Fase 8 ya respondió la pregunta de la arquitectura (no importa, en este
+régimen) y de paso dejó una nueva, más precisa: **repetir CBOW vs skip-gram con
+vocabulario 20k sobre el corpus completo**, que es el único escenario donde la
+hipótesis de las palabras poco frecuentes tiene dónde manifestarse. Eso depende
+del punto 4 de abajo.
 
-Después, las cuatro que dejó abiertas la Fase 7, en orden de interés:
+Las cuatro que dejó abiertas la Fase 7, en orden de interés:
 
 1. **`dim 200`, contexto 2.** La dimensión fue el factor dominante y no sabemos
    dónde deja de rendir. El salto 50→100 dio +12,9 pp; el de 100→200 dirá si la
