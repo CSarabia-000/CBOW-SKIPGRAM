@@ -31,13 +31,19 @@ cbow-sbwc/
 │   ├── train.py               # loop de entrenamiento, checkpoints
 │   ├── evaluate.py            # vecinos cercanos, analogías, similitud coseno
 │   └── export.py              # exportar embeddings a formato Word2Vec (.txt/.bin)
-├── notebooks/
+├── notebooks_CBOW/
+│   ├── 00_resumen_proyecto.ipynb
 │   ├── 01_exploracion_corpus.ipynb
 │   ├── 02_vocabulario.ipynb
 │   ├── 03_generacion_pares.ipynb
 │   ├── 04_entrenamiento.ipynb
 │   ├── 05_evaluacion_embeddings.ipynb
 │   └── 06_comparacion_configuraciones.ipynb
+├── notebooks_SKIPGRAM/        # mismo pipeline src/, otra arquitectura (arch: skipgram)
+│   ├── 01_por_que_no_un_proyecto_nuevo.ipynb
+│   ├── 02_skipgram.ipynb
+│   ├── 03_skipgram_contexto5.ipynb
+│   └── 04_resumen_comparativo.ipynb
 ├── checkpoints/               # modelos guardados, uno por configuración
 ├── embeddings/                # embeddings exportados, uno por configuración
 ├── requirements.txt
@@ -251,3 +257,66 @@ de la Fase 7, haciendo parecer que la corrida más chica era la más lenta.
 `run_summary` devuelve `seconds_per_epoch` (promedio, como siempre) y
 `seconds_per_epoch_median`; para costo, usar la mediana.
 
+
+---
+
+## 8. Fase 9 — Arquitectura × contexto, y el resumen comparativo
+
+`configs/piloto_sg_5k_50_5.yaml` completa un **2×2 de arquitectura × contexto**
+(CBOW/skip-gram × ctx 2/5, todo lo demás fijo). La pregunta que solo ese cuadro
+podía contestar: la Fase 7 midió que a CBOW la ventana ancha no le sirve; ¿le
+sirve a skip-gram, que no promedia el contexto sino que trata cada vecino como un
+ejemplo propio?
+
+### Resultado medido (no repetir esperando otra cosa)
+
+**La predicción falló en la dirección opuesta.** Ensanchar de ctx 2 a 5 da +1,0 pp
+en CBOW (p = 0,66) y **−3,5 pp en skip-gram** (p = 0,16). Y apareció el **único
+efecto de arquitectura significativo del proyecto, en contra de skip-gram**: con
+contexto 5 queda 5,6 pp por debajo de CBOW (IC [−10,2, −1,0], p = 0,026), con
+`plural` cayendo de 31,1% a 21,1% (p = 0,035).
+
+El razonamiento previo estaba invertido, y conviene dejarlo anotado: el argumento
+suponía que el vecino lejano trae señal. Si trae ruido —y la morfología del
+español vive en el vecino inmediato—, **promediar es una defensa**. CBOW diluye
+el ruido; skip-gram le da peso completo a cada vecino lejano, y por eso se
+degrada más.
+
+Cautela obligatoria: con Bonferroni sobre las ocho comparaciones del proyecto el
+umbral es 0,00625. Los dos efectos de dimensión lo pasan; este **no**. Es señal
+consistente, no conclusión cerrada.
+
+### Costo: skip-gram escala con la ventana, CBOW no
+
+CBOW genera un par por token sin importar el ancho (5.009.035/época a ctx 2 y a
+ctx 5). Skip-gram genera uno por vecino: 13.865.356 a ctx 2 (**2,77×**) y
+24.968.216 a ctx 5 (**4,98×**), o sea 7,0 min/época contra 2,7 de CBOW. Ensanchar
+la ventana en skip-gram es lo más caro que hace el proyecto y da el peor
+resultado.
+
+### `paired_difference` en `compare.py`
+
+`mcnemar` contesta **si** dos modelos difieren; `paired_difference` contesta
+**cuánto**, con un IC calculado sobre los pares. Los ítems que ambos modelos
+aciertan o fallan no aportan a la diferencia, y tratarlos como dos muestras
+independientes infla el error estándar hasta borrar efectos reales. Reportar un
+efecto pide las dos cosas.
+
+### Lo que quedó establecido, de ocho decisiones medidas
+
+Solo **una rindió**: duplicar la dimensión (+12,9 pp, p < 0,0001). Dos salieron
+en contra (ensanchar con dim 100; skip-gram con ctx 5) y cinco son
+indistinguibles de cero. De las seis corridas probadas contra la línea de base,
+**cinco tienen su intervalo superpuesto con el de ella**; la única que se despega
+es `piloto_5k_100_2`, que además es la más barata y la mejor a la vez.
+
+`notebooks_SKIPGRAM/04_resumen_comparativo.ipynb` tiene la tabla de las siete corridas, el
+forest plot de los ocho efectos y las tres hipótesis del proyecto que las
+mediciones refutaron.
+
+### Lo que sigue sin probarse
+
+Subir el contexto ya se probó tres veces (CBOW dim 50, CBOW dim 100, skip-gram) y
+ninguna ganó. **Bajarlo a `context_size: 1` nunca se probó**, y es ahora la
+predicción más directa que queda abierta: si la ventana angosta favorece la
+forma, ahí debería verse.

@@ -1,0 +1,65 @@
+# Corrida PILOTO de SKIP-GRAM a contexto 5: el gemelo exacto de piloto_5k_50_5,
+# cambiando UNA sola cosa (`arch`). Completa el cuadro 2x2 arquitectura x
+# contexto, que es lo que permite preguntar algo que las corridas anteriores no
+# podian responder:
+#
+#   CBOW   ctx 2 -> piloto_5k_50_2        skip-gram ctx 2 -> piloto_sg_5k_50_2
+#   CBOW   ctx 5 -> piloto_5k_50_5        skip-gram ctx 5 -> piloto_sg_5k_50_5  <-- esta
+#
+# La pregunta: la Fase 7 midio que a CBOW ensanchar la ventana no le sirve
+# (41,3% -> 42,3%, p = 0,66). La literatura sostiene que skip-gram aprovecha
+# ventanas anchas mejor que CBOW, porque cada vecino es un ejemplo propio en vez
+# de promediarse con los demas. Si eso vale aca, skip-gram deberia ganar mas al
+# pasar de ctx 2 a ctx 5 de lo que gano CBOW. Es una prediccion falsable y esta
+# corrida es la que la decide.
+#
+# Tres cosas para no confundir un costo con un problema:
+#
+#   1. Cada epoca produce muchos mas pares que CBOW: uno por vecino en vez de
+#      uno por token. El factor medido esta en el notebook 08.
+#
+#   2. La loss NO se compara ni con CBOW (otra tarea) ni con piloto_sg_5k_50_2
+#      (otro tamano de ventana). La comparacion valida es la precision en
+#      analogias y `mcnemar` sobre los mismos items. `comparable_loss` en
+#      src/compare.py ya separa las familias.
+#
+#   3. Para el costo por epoca usar la MEDIANA, no el promedio: history.json
+#      guarda reloj de pared y una suspension de la maquina contamina el
+#      promedio (ver run_summary en src/compare.py).
+#
+# Se entrena con:
+#   python -m src.train --config configs/piloto_sg_5k_50_5.yaml
+#
+name: "piloto_sg_5k_50_5"
+arch: "skipgram"             # <-- lo unico que cambia respecto de piloto_5k_50_5
+vocab_from: "base_5k_50_2"   # mismo vocabulario que todas las demas corridas
+
+# --- Corpus (Fase 1) ---
+corpus_path: "data/processed/muestra_2m.txt"
+corpus_sample_fraction: 1.0   # el archivo YA es la muestra; aca se lee entero
+
+# Deben coincidir con las del vocabulario prestado, o los indices no significan
+# lo mismo que cuando se conto.
+tokenizer:
+  lowercase: true
+  number_token: "<NUM>"
+  min_length: 1
+
+# --- Vocabulario (Fase 2) --- solo informativo: no se reconstruye
+vocab_size: 5000
+min_count: 5
+subsampling_threshold: 1.0e-5
+
+# --- Pares (Fase 3) --- misma ventana que piloto_5k_50_5, leida al reves
+context_size: 5           # <-- la variable frente a piloto_sg_5k_50_2
+drop_unknown: true
+
+# --- Modelo y entrenamiento (Fases 4-5) ---
+validation_sentences: 20000   # primeras N oraciones reservadas para validar
+embedding_dim: 50
+batch_size: 512
+learning_rate: 0.003
+epochs: 15                # mismas epocas que las otras cuatro corridas
+negative_samples: 10
+
+seed: 42

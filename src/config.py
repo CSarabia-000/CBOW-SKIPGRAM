@@ -45,7 +45,7 @@ def load_config(path: str | Path) -> dict:
 
     Las rutas relativas dentro del YAML se interpretan siempre respecto de la
     raíz del proyecto, no del directorio de trabajo, para que el mismo archivo
-    funcione desde un notebook en `notebooks/` o desde la línea de comandos.
+    funcione desde un notebook en `notebooks_CBOW/` o `notebooks_SKIPGRAM/` o desde la línea de comandos.
     """
     path = Path(path)
     if not path.is_absolute():

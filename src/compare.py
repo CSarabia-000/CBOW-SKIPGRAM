@@ -54,6 +54,7 @@ __all__ = [
     "GRID",
     "wilson_interval",
     "mcnemar",
+    "paired_difference",
     "run_summary",
     "collect",
     "cross_validation_loss",
@@ -290,6 +291,45 @@ def cross_validation_loss(
         seed=seed,
         max_batches=max_batches,
     )
+
+
+def paired_difference(
+    hits_a: Sequence[bool], hits_b: Sequence[bool], z: float = 1.96
+) -> dict:
+    """Diferencia de precisión B − A con su intervalo, para datos **pareados**.
+
+    `mcnemar` contesta *si* dos modelos difieren; esto contesta **cuánto**, y con
+    qué margen. Son preguntas distintas y las dos hacen falta para reportar un
+    efecto: un p-valor sin tamaño de efecto no dice si la diferencia importa, y
+    un tamaño de efecto sin intervalo no dice si es real.
+
+    El intervalo se calcula sobre los pares, no sobre dos proporciones sueltas.
+    Los ítems que ambos modelos aciertan —o que ambos fallan— no aportan nada a
+    la diferencia, y tratarlos como dos muestras independientes infla el error
+    estándar hasta hacer invisible cualquier efecto. Con `n` ítems y `b`, `c` los
+    desacuerdos en cada sentido:
+
+        delta = (c − b) / n
+        SE    = sqrt((b + c) − (c − b)² / n) / n
+
+    Returns:
+        `delta`, `ci` (el par bajo/alto) y los conteos que lo producen.
+    """
+    prueba = mcnemar(hits_a, hits_b)
+    n = len(hits_a)
+    if n == 0:
+        return {"delta": float("nan"), "ci": (float("nan"), float("nan")), **prueba}
+
+    b, c = prueba["solo_a"], prueba["solo_b"]
+    delta = (c - b) / n
+    varianza = max(0.0, (b + c) - (c - b) ** 2 / n)
+    error = math.sqrt(varianza) / n
+    return {
+        "delta": delta,
+        "ci": (delta - z * error, delta + z * error),
+        "std_error": error,
+        **prueba,
+    }
 
 
 def _rotulos(filas: Sequence[Mapping], ancho: int = 12) -> list[str]:

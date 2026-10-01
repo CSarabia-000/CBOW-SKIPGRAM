@@ -22,36 +22,41 @@ nuevo en `configs/`.
 
 | Fase | Módulo | Notebook | Estado |
 |------|--------|----------|--------|
-| 1. Lectura del corpus | `src/corpus.py` | `01_exploracion_corpus.ipynb` | ✅ implementada |
-| 2. Vocabulario | `src/vocabulary.py` | `02_vocabulario.ipynb` | ✅ implementada |
-| 3. Pares contexto-target | `src/dataset.py` | `03_generacion_pares.ipynb` | ✅ implementada |
-| 4. Modelo (CBOW y skip-gram) | `src/model.py` | `04_entrenamiento.ipynb` | ✅ implementada |
-| 5. Entrenamiento | `src/train.py` | `04_entrenamiento.ipynb` | ✅ implementada |
-| 6. Evaluación y exportación | `src/evaluate.py`, `src/export.py` | `05_evaluacion_embeddings.ipynb` | ✅ implementada |
-| 7. Comparación de configuraciones | `src/compare.py` | `06_comparacion_configuraciones.ipynb` | ✅ implementada |
-| 8. Skip-gram | `src/dataset.py`, `src/model.py` | `07_skipgram.ipynb` | ✅ implementada y medida |
+| 1. Lectura del corpus | `src/corpus.py` | `notebooks_CBOW/01_exploracion_corpus.ipynb` | ✅ implementada |
+| 2. Vocabulario | `src/vocabulary.py` | `notebooks_CBOW/02_vocabulario.ipynb` | ✅ implementada |
+| 3. Pares contexto-target | `src/dataset.py` | `notebooks_CBOW/03_generacion_pares.ipynb` | ✅ implementada |
+| 4. Modelo (CBOW y skip-gram) | `src/model.py` | `notebooks_CBOW/04_entrenamiento.ipynb` | ✅ implementada |
+| 5. Entrenamiento | `src/train.py` | `notebooks_CBOW/04_entrenamiento.ipynb` | ✅ implementada |
+| 6. Evaluación y exportación | `src/evaluate.py`, `src/export.py` | `notebooks_CBOW/05_evaluacion_embeddings.ipynb` | ✅ implementada |
+| 7. Comparación de configuraciones | `src/compare.py` | `notebooks_CBOW/06_comparacion_configuraciones.ipynb` | ✅ implementada |
+| 8. Skip-gram | `src/dataset.py`, `src/model.py` | `notebooks_SKIPGRAM/02_skipgram.ipynb` | ✅ implementada y medida |
+| 9. Arquitectura × contexto | `src/compare.py` | `notebooks_SKIPGRAM/03_skipgram_contexto5.ipynb` | ✅ implementada y medida |
+| — Resumen comparativo | — | `notebooks_SKIPGRAM/04_resumen_comparativo.ipynb` | ✅ las siete corridas |
 
 **Artefactos ya producidos**:
 
 - `data/processed/base_5k_50_2/vocab.json` — vocabulario de 5.000 palabras
   construido sobre el **corpus completo**
 - `data/processed/muestra_2m.txt` — muestra aleatoria de 2M de oraciones (242 MB)
-- **seis corridas entrenadas** (4 de la grilla + 1 ablación + 1 skip-gram), cada
+- **siete corridas entrenadas** (4 de la grilla + 1 ablación + 2 skip-gram), cada
   una con sus 15 checkpoints, `best.pt`, `last.pt`, `history.json` y sus
   embeddings exportados en `.txt` y `.bin`, validados con gensim
 
 > **Configuración recomendada: `piloto_5k_100_2`** (dim 100, contexto 2), la
 > mejor de la grilla con 54,2% en analogías. Ver *Fase 7*.
 
-> **Por dónde empezar a leer:** `notebooks/00_resumen_proyecto.ipynb` recorre las
-> primeras seis fases con un ejemplo y un gráfico por fase. Los notebooks 01-05
-> tienen el detalle de cada una, y el 06 es la comparativa de la Fase 7.
+> **Por dónde empezar a leer:** `notebooks_CBOW/00_resumen_proyecto.ipynb` recorre las
+> primeras seis fases con un ejemplo y un gráfico por fase, y
+> **`notebooks_SKIPGRAM/04_resumen_comparativo.ipynb`** junta las siete corridas con sus
+> tamaños de efecto. Los notebooks 01-05 tienen el detalle de cada fase; el 06,
+> 07 y 08 son los experimentos comparativos.
 
-> **Resultado de la Fase 8 (skip-gram):** empate. 40,2% contra 41,3% de CBOW,
-> McNemar p = 0,74, con el doble de costo. Con vocabulario de 5.000 palabras la
-> arquitectura no mueve la aguja; la dimensión sí (+12,9 pp en la Fase 7). Ver
-> *Fase 8* para por qué el experimento no pudo probar la hipótesis de las palabras
-> poco frecuentes.
+> **Resultado de las Fases 8 y 9 (skip-gram):** no conviene a esta escala. Empata
+> con CBOW a contexto 2 (−1,0 pp, p = 0,74) y **pierde** a contexto 5 (−5,6 pp,
+> p = 0,026), pagando entre 2,1× y 2,6× el tiempo. Con vocabulario de 5.000
+> palabras la arquitectura no mueve la aguja; la dimensión sí (+12,9 pp en la
+> Fase 7). Ver *Fase 8* para por qué el experimento no puede probar la hipótesis
+> de las palabras poco frecuentes.
 
 ---
 
@@ -66,7 +71,8 @@ proyecto_cbow/
 │   ├── piloto_5k_50_5.yaml        # grilla fase 7: contexto 5
 │   ├── piloto_5k_100_5.yaml       # grilla fase 7: dim 100 + contexto 5
 │   ├── ablacion_unk_5k_50_2.yaml  # ablación: entrenar CON <UNK>
-│   └── piloto_sg_5k_50_2.yaml     # fase 8: skip-gram, gemelo de piloto_5k_50_2
+│   ├── piloto_sg_5k_50_2.yaml     # fase 8: skip-gram, gemelo de piloto_5k_50_2
+│   └── piloto_sg_5k_50_5.yaml     # fase 9: skip-gram con contexto 5
 ├── data/
 │   ├── raw/sbwce.clean.txt.bz2    # el corpus (no se versiona)
 │   └── processed/
@@ -82,8 +88,9 @@ proyecto_cbow/
 │   ├── train.py                   # Fase 5: loop, validación, checkpoints, history
 │   ├── evaluate.py                # Fase 6: vecinos, analogías, precisión
 │   ├── export.py                  # Fase 6: exportación a formato Word2Vec
-│   └── compare.py                 # Fase 7: tabla comparativa, Wilson, McNemar
-├── notebooks/                     # 00_resumen + 01..06, uno por fase
+│   └── compare.py                 # Fases 7 y 9: tabla, Wilson, McNemar, efectos
+├── notebooks_CBOW/                # 00_resumen + 01..06, una por fase CBOW
+├── notebooks_SKIPGRAM/            # 01 por qué no un proyecto nuevo, 02-03 experimentos, 04 resumen comparativo
 ├── checkpoints/{name}/            # modelos guardados, una carpeta por corrida
 ├── embeddings/{name}.{txt,bin}    # embeddings exportados
 ├── requirements.txt
@@ -289,12 +296,14 @@ from src.export import export_from_config
 
 export_from_config(config, binary=True)
 
-# --- Fase 7: comparación ---
-from src.compare import GRID, collect, cross_validation_loss, mcnemar, wilson_interval
+# --- Fases 7 y 9: comparación ---
+from src.compare import (GRID, collect, cross_validation_loss, mcnemar,
+                         paired_difference, wilson_interval)
 
 filas = collect(GRID)                            # una fila por corrida
 wilson_interval(118, 286)                        # (0.357, 0.470)
-mcnemar(hits_a, hits_b)                          # prueba pareada sobre los mismos ítems
+mcnemar(hits_a, hits_b)                          # ¿difieren? prueba pareada
+paired_difference(hits_a, hits_b)                # ¿cuánto? delta + IC sobre los pares
 cross_validation_loss("configs/ablacion_unk_5k_50_2.yaml",
                       "configs/piloto_5k_50_2.yaml")   # misma vara para los dos
 ```
@@ -538,6 +547,126 @@ Para gastar cómputo, el orden quedó establecido: primero dimensión, después
 vocabulario, y la arquitectura al final.
 
 ---
+
+## Fase 9 — ¿Le sirve a skip-gram la ventana ancha que a CBOW no?
+
+Las fases 7 y 8 dejaron dos resultados que juntos plantean una pregunta que
+ninguna podía contestar sola: a CBOW ensanchar la ventana no le sirve (+1,0 pp,
+p = 0,66), y skip-gram empata con CBOW a contexto 2 (−1,0 pp, p = 0,74). ¿Son el
+mismo hecho, o skip-gram sí aprovecha la ventana ancha?
+
+Había un motivo mecánico para sospechar que sí: CBOW **promedia** el contexto, así
+que sumar vecinos lejanos diluye a los cercanos; skip-gram no promedia nada —cada
+vecino es un ejemplo propio—, así que el vecino lejano *agrega* en vez de tapar.
+
+`configs/piloto_sg_5k_50_5.yaml` completa el 2×2 que lo decide:
+
+| | contexto 2 | contexto 5 |
+|---|---|---|
+| **CBOW** | `piloto_5k_50_2` 41,3% | `piloto_5k_50_5` 42,3% |
+| **skip-gram** | `piloto_sg_5k_50_2` 40,2% | `piloto_sg_5k_50_5` **36,7%** |
+
+### La predicción falló, y en la dirección opuesta
+
+| efecto de ensanchar | delta | IC 95% pareado | p |
+|---|---|---|---|
+| dentro de CBOW | +1,0 pp | [−2,1, +4,2] | 0,66 |
+| dentro de skip-gram | **−3,5 pp** | [−7,9, +0,9] | 0,16 |
+
+Esperábamos que skip-gram ganara más que CBOW. Lo que pasó es que CBOW no se
+movió y skip-gram empeoró.
+
+Y apareció el **único efecto de arquitectura significativo del proyecto**, en
+contra de skip-gram: con contexto 5 queda **5,6 puntos por debajo** de CBOW
+(IC [−10,2, −1,0], p = 0,026). Con contexto 2 el empate de la Fase 8 se mantiene.
+
+> **Con cautela.** Es una comparación significativa entre ocho del proyecto. Con
+> corrección de Bonferroni el umbral baja a 0,00625: los dos efectos de dimensión
+> lo pasan holgadamente, este **no**. Es una señal consistente, no una conclusión
+> cerrada.
+
+### Por qué el razonamiento estaba invertido
+
+El argumento daba por sentado que **el vecino lejano trae señal útil**. Si en
+realidad trae ruido —y las relaciones morfológicas del español viven en el vecino
+inmediato, no a cinco palabras—, entonces promediar es una **defensa**, no una
+pérdida. CBOW diluye el ruido; skip-gram le da peso completo, un ejemplo de
+entrenamiento por cada vecino lejano.
+
+Eso predice que la caída se concentre en las relaciones de forma, y es lo que se
+ve: **`plural` cae de 31,1% a 21,1%** (p = 0,035), la única categoría con
+diferencia individual significativa, y justamente la que depende del vecino
+inmediato.
+
+### El costo, que empeora el trato
+
+| corrida | pares/época | factor | min/época (mediana) |
+|---|---|---|---|
+| `piloto_5k_50_5` (CBOW) | 5.009.035 | 1,00× | 2,7 |
+| `piloto_sg_5k_50_2` | 13.865.356 | 2,77× | 5,4 |
+| `piloto_sg_5k_50_5` | 24.968.216 | **4,98×** | **7,0** |
+
+CBOW genera un par por token sin importar el ancho de la ventana; skip-gram uno
+por vecino, así que ensanchar lo multiplica. A contexto 5 son **2,6× más caro
+para quedar 5,6 puntos más abajo**.
+
+> Los tiempos se leen con la **mediana**, no el promedio: `history.json` guarda
+> reloj de pared, y el promedio de `piloto_sg_5k_50_2` da 13,1 min/época contra
+> 5,4 de mediana — esa brecha es una suspensión de la máquina registrada dentro
+> de una época, no cómputo.
+
+### Lo que este resultado no dice
+
+Sigue en pie la advertencia de la Fase 8: con vocabulario de 5.000 sobre 2.028M
+de tokens **no hay palabras raras** —la última, `cercana`, aparece 33.838
+veces—, así que el mecanismo por el que skip-gram suele ganar en la literatura no
+tiene dónde actuar. Lo medido es que **a esta escala y con esta ventana skip-gram
+no conviene**, no que sea peor en general.
+
+## Resumen comparativo de las siete corridas
+
+`notebooks_SKIPGRAM/04_resumen_comparativo.ipynb` junta todo lo medido en las fases 7, 8 y
+9 y contesta las cuatro preguntas del proyecto con su tamaño de efecto.
+
+| corrida | arq | dim | ctx | analogías | min/época | pares/época |
+|---|---|---|---|---|---|---|
+| `piloto_5k_50_2` (base) | cbow | 50 | 2 | 41,3% | 2,6 | 5.009.035 |
+| **`piloto_5k_100_2`** | cbow | **100** | 2 | **54,2%** | 2,6 | 5.009.035 |
+| `piloto_5k_50_5` | cbow | 50 | 5 | 42,3% | 2,7 | 5.009.035 |
+| `piloto_5k_100_5` | cbow | 100 | 5 | 49,7% | 2,7 | 5.009.035 |
+| `ablacion_unk_5k_50_2` | cbow | 50 | 2 | 44,4% | 2,6 | 5.067.178 |
+| `piloto_sg_5k_50_2` | skipgram | 50 | 2 | 40,2% | 5,4 | 13.865.356 |
+| `piloto_sg_5k_50_5` | skipgram | 50 | 5 | 36,7% | 7,0 | 24.968.216 |
+
+**De ocho decisiones medidas, una sola rindió.** Los ocho efectos pareados:
+
+| efecto | delta | IC 95% | p |
+|---|---|---|---|
+| más dimensión (50→100), ctx 2 | **+12,9 pp** | [+8,2, +17,7] | <0,0001 |
+| más dimensión (50→100), ctx 5 | **+7,3 pp** | [+3,5, +11,2] | 0,0003 |
+| más contexto (2→5), CBOW dim 50 | +1,0 pp | [−2,1, +4,2] | 0,66 |
+| más contexto (2→5), CBOW dim 100 | −4,5 pp | [−8,4, −0,6] | 0,035 |
+| más contexto (2→5), skip-gram | −3,5 pp | [−7,9, +0,9] | 0,16 |
+| skip-gram en vez de CBOW, ctx 2 | −1,0 pp | [−5,1, +3,0] | 0,74 |
+| skip-gram en vez de CBOW, ctx 5 | −5,6 pp | [−10,2, −1,0] | 0,026 |
+| entrenar con `<UNK>` | +3,1 pp | [−0,9, +7,2] | 0,18 |
+
+Dicho de otro modo: de las seis corridas que se probaron contra la línea de base,
+**cinco tienen su intervalo superpuesto con el de ella**. La única que se despega
+es `piloto_5k_100_2`, que además resulta ser **la más barata y la mejor al mismo
+tiempo**.
+
+### Tres hipótesis propias que el proyecto refutó
+
+Las tres estaban escritas antes de medir:
+
+1. *"La debilidad morfológica viene de `context_size=2`; subirlo la arreglará"*
+   (Fase 6). Falso en los dos sentidos: subir el contexto empeoró la morfología, y
+   la causa real era la dimensión.
+2. *"Dejar `<UNK>` hace que el modelo gaste capacidad prediciendo un comodín"*
+   (Fase 6). A 0,97% del stream esa capacidad es despreciable.
+3. *"Skip-gram aprovecha la ventana ancha mejor que CBOW porque no promedia"*
+   (Fase 9). Al revés: si el vecino lejano es ruido, promediarlo es una defensa.
 
 ## Configuración
 
@@ -785,20 +914,24 @@ ruido.
 
 Con la grilla montada, cada pregunta nueva es un YAML.
 
-La Fase 8 ya respondió la pregunta de la arquitectura (no importa, en este
-régimen) y de paso dejó una nueva, más precisa: **repetir CBOW vs skip-gram con
-vocabulario 20k sobre el corpus completo**, que es el único escenario donde la
-hipótesis de las palabras poco frecuentes tiene dónde manifestarse. Eso depende
-del punto 4 de abajo.
+Las fases 8 y 9 cerraron la pregunta de la arquitectura para este régimen
+(skip-gram empata a contexto 2 y pierde a contexto 5, pagando entre 2,1× y 2,6×
+el tiempo) y la de la ventana ancha para las dos arquitecturas (no sirve en
+ninguna). De paso dejaron una pregunta más precisa: **repetir CBOW vs skip-gram
+con vocabulario 20k sobre el corpus completo**, el único escenario donde la
+hipótesis de las palabras poco frecuentes tiene dónde manifestarse. Depende del
+punto 4 de abajo.
 
-Las cuatro que dejó abiertas la Fase 7, en orden de interés:
+Las cuatro pendientes, en orden de interés:
 
 1. **`dim 200`, contexto 2.** La dimensión fue el factor dominante y no sabemos
    dónde deja de rendir. El salto 50→100 dio +12,9 pp; el de 100→200 dirá si la
    curva sigue subiendo o se aplana.
 2. **`context_size: 1`.** Si las ventanas angostas favorecen la morfología, el
-   experimento natural no es subir el contexto sino **bajarlo**. Es la predicción
-   más directa que deja la Fase 7 y no se probó.
+   experimento natural no es subir el contexto sino **bajarlo**. Tres corridas ya
+   probaron subirlo —CBOW con dim 50, CBOW con dim 100 y skip-gram— y ninguna
+   ganó; bajarlo sigue sin probarse, y es ahora la predicción más directa que
+   queda abierta.
 3. **`subsampling_threshold: 1e-4`.** Con el umbral actual `la` sobrevive el 1,6%
    de las veces: el subsampling está borrando justo los artículos que marcan
    género y número. Es un sospechoso concreto de la debilidad morfológica.

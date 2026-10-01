@@ -16,3 +16,8 @@ venv/
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+
+# Documentación
+reporte/*
+
+.vscode/*
